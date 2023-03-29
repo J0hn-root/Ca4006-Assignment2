@@ -14,17 +14,22 @@ from actions import Actions
 
 def get_commands() -> list:
     """
-        parse commans given in input with the following format:
+        Parse commands given in input with the following format:
 
-        routing_key:command:(amount|researcher)
+            'routing_key:command:(amount|researcher)'
 
-        routing_key defines the queue belonging to the target of the command
-        command is the name of the command can be:
+        Commands can be concatenated using th epipe character:
+
+            '1:add:3 | 2:details | 4:transactions' 
+
+        'routing_key' defines the queue belonging to the target of the command (which is the id of the researcher)
+        'command' is the name of the command can be:
             - withdraw
             - add
             - remove
             - transactions
             - details
+            - time
 
         the third parameter can be amount (only for withdraw) or researcher (only for add/remove) 
     """
