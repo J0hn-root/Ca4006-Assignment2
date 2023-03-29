@@ -5,12 +5,17 @@ from pika.adapters.blocking_connection import BlockingChannel
 import json
 import pickle
 from university_database import UniversityDatabase
-from datetime import datetime
+from university_request_handler import UniversityRequestHandler, CreateAccountHandler, WithdrawHandler, AddResearcherHandler, RemoveResearcherHandler, GetDetailsHandler, ListTransactionsHandler
+from timer import Timer
+from request_status import RequestStatus
+from request_response import RequestResponse
 
 class University(object):
 
     DATA_FILE: str = "university.pickle"
     database: UniversityDatabase
+    request_handler: UniversityRequestHandler
+    timer: Timer = Timer("university")
 
     def __init__(self) -> None:
         try:
@@ -18,38 +23,66 @@ class University(object):
             with open(self.DATA_FILE, 'rb') as f:
                 self.database = pickle.load(f)
         except FileNotFoundError:
-            # initialize funds and history
+            # initialize database
             self.database = UniversityDatabase()
+
+        # initialize responisbility chain
+        self.request_handler = CreateAccountHandler()
+
+        (self.request_handler
+            .set_next_handler(WithdrawHandler())
+            .set_next_handler(AddResearcherHandler())
+            .set_next_handler(RemoveResearcherHandler())
+            .set_next_handler(GetDetailsHandler())
+            .set_next_handler(ListTransactionsHandler())
+        )
 
         #Connect to RabbitMQ
         connection = BlockingConnection(ConnectionParameters(host='localhost'))
         channel = connection.channel()
 
-        #durable = True -> queue won't be lost on restarts
-        channel.queue_declare(queue='create_project_account', durable=True)
-        print(' [*] Waiting for messages. To exit press CTRL+C')
+        """
+            RPC Researcher actions setup
+        """
+
+        #Create queue for research proposal RPC
+        channel.queue_declare(queue='university_requests_queue')
 
         #Fair dispatch, no more than one message to a worker at a time
         #To avoid race condition
         channel.basic_qos(prefetch_count=1)
-        channel.basic_consume(queue='create_project_account', on_message_callback=self.callback)
 
+        #Defining queue where callback function should receive messages from
+        channel.basic_consume(queue='university_requests_queue', on_message_callback=self.process_requests)
+
+        print(' [U] Waiting for requests.')
+
+        #await research proposals
         channel.start_consuming()
 
-    def callback(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
-        print(" [x] Received Create Project Account Request")
+    def process_requests(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
         request = json.loads(body)
+        print(f" [U] Received '{request['request_type']}' request")
 
-        self.database.create_research_account(request['title'], request['researcher'], request['budget'],  datetime.strptime(request['end_date'], '%d-%m-%Y').date())
+        result: RequestResponse = self.request_handler.execute_request(request, self.database)
 
-        # save database to file
-        with open(self.DATA_FILE, 'wb') as f:
-            pickle.dump(self.database, f)
+        if result.status == RequestStatus.SUCCEEDED.value:
+            # save database to file
+            with open(self.DATA_FILE, 'wb') as f:
+                pickle.dump(self.database, f)
 
-        self.database.access_details(request['researcher'])
+            print(" [U] Changes Saved")
 
-        print(" [x] Done")
-        # notify that the account has been created
+        # notify response
+        ch.basic_publish(exchange='',
+            routing_key=props.reply_to,
+            properties=BasicProperties(
+                correlation_id = props.correlation_id,
+                content_type="application/json"
+                ),
+            body=result.to_json()
+        )
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 if __name__ == '__main__':

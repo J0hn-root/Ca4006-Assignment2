@@ -9,11 +9,17 @@ from funding_agency_database import FundingAgencyDatabase
 from research_proposal_request import ResearchProposalRequest
 from datetime import date
 from dateutil.relativedelta import relativedelta
+from actions import Actions
+import uuid
+from timer import Timer
 
 class FundingAgency(object):
 
     DATA_FILE: str = "funding_agency.pickle"
     database: FundingAgencyDatabase
+    response: dict
+    correlation_id: uuid
+    timer: Timer = Timer("funding agency")
 
     def __init__(self) -> None:
         try:
@@ -38,7 +44,7 @@ class FundingAgency(object):
         #Defining queue where callback function should receive messages from
         channel.basic_consume(queue='submit_research_proposal', on_message_callback=self.process_research_proposal)
 
-        print(" [x] Awaiting Research Proposals requests")
+        print(" [F] Awaiting Research Proposals requests")
 
         #await research proposals
         channel.start_consuming()
@@ -48,16 +54,17 @@ class FundingAgency(object):
         
         if request.amount > self.database.funds:
             response = RequestStatus.REJECTED.value
-            print(f" [x] Research Proposals rejected: not enough funds (Request: {request.amount}, Funds: {self.database.funds})")
+            print(f" [F] Research Proposals rejected: not enough funds (Request: {request.amount}, Funds: {self.database.funds})")
         elif request.amount >= 200000 and request.amount <= 500000:
             response = RequestStatus.APPROVED.value
             self.database.allocate_funds(request.amount)
-            print(" [x] Research Proposals accepted")
+            print(" [F] Research Proposals accepted")
         else:
             response = RequestStatus.REJECTED.value
-            print(" [x] Research Proposals rejected")
+            print(" [F] Research Proposals rejected")
 
         history_record = {
+            'request_type': Actions.CREATE_ACCOUNT.value,
             'status': response, 
             'budget': request.amount,
             'title': request.title,
@@ -71,36 +78,75 @@ class FundingAgency(object):
         with open(self.DATA_FILE, 'wb') as f:
             pickle.dump(self.database, f)
 
+        # send response to researcher
         ch.basic_publish(exchange='',
                         routing_key=props.reply_to,
                         properties=BasicProperties(
                             correlation_id = props.correlation_id,
                             content_type="application/json"
                             ),
-                        body=json.dumps(response))
+                        body=json.dumps({"status": response}))
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        print(" [x] Response sent")
+        print(" [F] Response sent")
         if(response == RequestStatus.APPROVED.value):
             self.notify_university(history_record)
 
-    def notify_university(self, message: dict) -> None:
+    def notify_university(self, message: dict):
         #Connect to RabbitMQ
-        connection = BlockingConnection(ConnectionParameters(host='localhost'))
-        channel = connection.channel()
+        self.connection = BlockingConnection(ConnectionParameters(host='localhost'))
+        self.channel = self.connection.channel()
 
-        channel.queue_declare(queue='create_project_account', durable=True)
+        #Create an anonymous exclusive callback queue
+        result = self.channel.queue_declare(queue='', exclusive=True)
+        self.callback_queue = result.method.queue
 
-        channel.basic_publish(
+        self.channel.basic_consume(
+            queue=self.callback_queue,
+            on_message_callback=self.on_response,
+            auto_ack=True)
+        
+        #Initialize the response to NULL and create a new request ID
+        self.response = None
+        self.correlation_id = str(uuid.uuid4())
+
+        print(" [F] Sending Create Account Request")
+        # Send Request To Funding Agency
+        self.channel.basic_publish(
             exchange='',
-            routing_key='create_project_account',
-            body=json.dumps(message),
+            routing_key='university_requests_queue',
             properties=BasicProperties(
-                delivery_mode=PERSISTENT_DELIVERY_MODE, #queue won't be lost even on restarts
+                reply_to=self.callback_queue,   # Anonymous exclusive researcher callback queue
+                correlation_id=self.correlation_id,    # Request ID
                 content_type="application/json"
-            ))
-        print(" [x] Sent %r" % message)
-        connection.close()
+            ),
+            body=json.dumps(message)
+        )
+        
+        self.connection.process_data_events(time_limit=None)
+
+        
+        # #Connect to RabbitMQ
+        # connection = BlockingConnection(ConnectionParameters(host='localhost'))
+        # channel = connection.channel()
+
+        # channel.queue_declare(queue='create_project_account', durable=True)
+
+        # channel.basic_publish(
+        #     exchange='',
+        #     routing_key='create_project_account',
+        #     body=json.dumps(message),
+        #     properties=BasicProperties(
+        #         delivery_mode=PERSISTENT_DELIVERY_MODE, #queue won't be lost even on restarts
+        #         content_type="application/json"
+        #     ))
+        # print(" [F] Sent %r" % message)
+        # connection.close()
+
+    def on_response(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
+        print(" [F] Received Create Account Response")
+        if self.correlation_id == props.correlation_id:
+            self.response = json.loads(body)
 
 if __name__ == '__main__':
     funding_agency = FundingAgency()
