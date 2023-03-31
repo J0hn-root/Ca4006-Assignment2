@@ -1,6 +1,7 @@
 from datetime import date
 from request_status import RequestStatus
 from request_response import RequestResponse
+from timer import Timer
 
 class ResearchAccount(object):
     budget: int
@@ -27,27 +28,30 @@ class UniversityDatabase(object):
         self.accounts = {}
         self.lead_researchers = {}
 
-    def create_research_account(self, project_title: str, researcher: str, budget: int, end_date: date) -> RequestResponse:
+    def create_research_account(self, project_title: str, researcher: str, budget: int, end_date: date, timer: Timer) -> RequestResponse:
         account = ResearchAccount(budget, researcher, end_date)
         self.accounts[project_title] = account
         self.lead_researchers[researcher] = project_title
 
         return RequestResponse(
             RequestStatus.SUCCEEDED.value, 
-            f"Account '{project_title}' has been created"
+            f"Account '{project_title}' has been created",
+            timer.get_time()
         )
 
-    def add_researcher(self, lead_researcher: str, researcher: str) -> RequestResponse:
+    def add_researcher(self, lead_researcher: str, researcher: str, timer: Timer) -> RequestResponse:
         if(lead_researcher not in self.lead_researchers.keys()):
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{lead_researcher} is not a Lead Researcher"
+                f"{lead_researcher} is not a Lead Researcher",
+                timer.get_time()
             )
         
         if(researcher in self.lead_researchers.keys()):
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{researcher} is leading another research"
+                f"{researcher} is leading another research",
+                timer.get_time()
             )
         
         account_name: str = self.lead_researchers[lead_researcher]
@@ -56,7 +60,8 @@ class UniversityDatabase(object):
         if researcher in account.users:
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{researcher} has already access to account '{account_name}'"
+                f"{researcher} has already access to account '{account_name}'",
+                timer.get_time()
             )
         else:
             account.users.append(researcher)
@@ -64,14 +69,16 @@ class UniversityDatabase(object):
             return RequestResponse(
                 RequestStatus.SUCCEEDED.value, 
                 f"{researcher} has been added to account '{account_name}'",
+                timer.get_time(),
                 account_name
             )
 
-    def remove_researcher(self, lead_researcher: str, researcher: str) -> RequestResponse:
+    def remove_researcher(self, lead_researcher: str, researcher: str, timer: Timer) -> RequestResponse:
         if(lead_researcher not in self.lead_researchers.keys()):
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{lead_researcher} is not a Lead Researcher"
+                f"{lead_researcher} is not a Lead Researcher",
+                timer.get_time()
             )
         
         account_name: str = self.lead_researchers[lead_researcher]
@@ -82,22 +89,25 @@ class UniversityDatabase(object):
             return RequestResponse(
                 RequestStatus.SUCCEEDED.value, 
                 f"{researcher} has been removed from account '{account_name}'",
+                timer.get_time(),
                 account_name
             )
         else:
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{researcher} does not have access to account '{account_name}'"
+                f"{researcher} does not have access to account '{account_name}'",
+                timer.get_time()
             )
 
-    def access_details(self, lead_researcher: str) -> RequestResponse:
+    def access_details(self, lead_researcher: str, timer: Timer) -> RequestResponse:
         """
             Returns remaining budget, end date, users
         """
         if(lead_researcher not in self.lead_researchers.keys()):
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{lead_researcher} is not a Lead Researcher"
+                f"{lead_researcher} is not a Lead Researcher",
+                timer.get_time()
             )
         
         account_name: str = self.lead_researchers[lead_researcher]
@@ -107,19 +117,21 @@ class UniversityDatabase(object):
         \t  LEAD RESEARCHER:    {account.leading_researcher}\n\
         \t  BUDGET(REMAINING):  {account.budget} £\n\
         \t  USERS:              {account.users}\n\
-        \t  END DATE:           {account.end_date}\n\
+        \t  END DATE:           {account.end_date.strftime('%d-%m-%Y')}\n\
         \t------------------------------------------------------""")
 
         return RequestResponse(
             RequestStatus.SUCCEEDED.value,
-            message
+            message,
+            timer.get_time()
         )
 
-    def list_transactions(self, lead_researcher: str) -> RequestResponse:
+    def list_transactions(self, lead_researcher: str, timer: Timer) -> RequestResponse:
         if(lead_researcher not in self.lead_researchers.keys()):
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{lead_researcher} is not a Lead Researcher"
+                f"{lead_researcher} is not a Lead Researcher",
+                timer.get_time()
             )
         
         account_name: str = self.lead_researchers[lead_researcher]
@@ -128,32 +140,35 @@ class UniversityDatabase(object):
         message_list = []
         message_list.append(f"""\t\t------------------------------------------------------\n\
         \t{account_name} TRANSACTIONS\n\n\
-        \t{'ID':4} | {'RESEARCHER':15} | {'AMOUNT':6} | {'DATE':10} | {'STATUS':8} | {'BUDGET':6}\n""")
+        \t{'ID':4} | {'RESEARCHER':15} | {'AMOUNT':6} | {'DATE':15} | {'STATUS':10} | {'BUDGET':10}\n""")
 
         for id, transaction in account.transactions.items():
-            message_list.append(f"""\t{id: 4} | {transaction['researcher']:15} | {transaction['amount']:6} | {transaction['date'].strftime('%d-%m-%Y'):10} \
-                  | {transaction['status']:8} | {transaction['budget']:6}\n""")
+            date_transaction = transaction['date'].strftime('%d-%m-%Y')
+            message_list.append(f"""\t\t{id: 4} | {transaction['researcher']:15} | {transaction['amount']:6} | {date_transaction:15} | {transaction['status']:10} | {transaction['budget']:10}\n""")
 
         message_list.append("\t\t------------------------------------------------------")
 
         return RequestResponse(
             RequestStatus.SUCCEEDED.value,
-            "".join(message_list)
+            "".join(message_list),
+            timer.get_time()
         )
 
-    def withdraw_funds(self, account_name: str, researcher: str, amount: int) -> RequestResponse:
+    def withdraw_funds(self, account_name: str, researcher: str, amount: int, timer: Timer) -> RequestResponse:
         if account_name == None:
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{researcher} has not access to any accounts"
+                f"{researcher} has not access to any accounts",
+                timer.get_time()
             )
         
         account: ResearchAccount = self.accounts[account_name]
 
-        if researcher not in account.users:
+        if researcher not in account.users and researcher != account.leading_researcher:
             return RequestResponse(
                 RequestStatus.FAILED.value, 
-                f"{researcher} has not access to account '{account_name}'"
+                f"{researcher} has not access to account '{account_name}'",
+                timer.get_time()
             )
 
         #get transaction id 
@@ -165,12 +180,13 @@ class UniversityDatabase(object):
         else:
             return RequestResponse(
                 RequestStatus.FAILED.value,
-                f"Not enough budegt left in account '{account_name}'"
+                f"Not enough budegt left in account '{account_name}'",
+                timer.get_time()
             )
         
         transaction = {
             "researcher": researcher,
-            "date": date.today(),
+            "date": timer.get_time_str(),
             "amount": amount,
             "status": RequestStatus.SUCCEEDED.value,
             "budget": account.budget    #after the transaction
@@ -184,5 +200,6 @@ class UniversityDatabase(object):
 
         return RequestResponse(
             RequestStatus.SUCCEEDED.value,
-            f"{amount} £ has been withdrawn from account '{account_name}'"
+            f"{amount} £ has been withdrawn from account '{account_name}'",
+            timer.get_time()
         )

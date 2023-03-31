@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 from actions import Actions
 import uuid
 from timer import Timer
+from concurrent.futures import ThreadPoolExecutor
 
 class FundingAgency(object):
 
@@ -29,7 +30,13 @@ class FundingAgency(object):
         except FileNotFoundError:
             # initialize funds and history
             self.database = FundingAgencyDatabase()
-                
+
+        # two threads
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            executor.submit(self.timer.start)
+            executor.submit(self.start)
+    
+    def start(self) -> None:
         #Connect to RabbitMQ
         connection = BlockingConnection(ConnectionParameters(host='localhost'))
         channel = connection.channel()
@@ -51,6 +58,9 @@ class FundingAgency(object):
 
     def process_research_proposal(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:    
         request: ResearchProposalRequest = ResearchProposalRequest.from_json_data(body)
+
+        #adjust timer if needed
+        self.timer.adjust_timer(request.timestamp.strftime("%d-%m-%Y"))
         
         if request.amount > self.database.funds:
             response = RequestStatus.REJECTED.value
@@ -69,7 +79,8 @@ class FundingAgency(object):
             'budget': request.amount,
             'title': request.title,
             'researcher': request.id,
-            'end_date': (date.today() + relativedelta(months=1)).strftime('%d-%m-%Y') # end date 1 month after allocating budget
+            'end_date': (date.today() + relativedelta(months=1)).strftime('%d-%m-%Y'), # end date 1 month after allocating budget
+            'timestamp': self.timer.get_time_str()
         }
 
         self.database.record_history(history_record)
@@ -80,12 +91,17 @@ class FundingAgency(object):
 
         # send response to researcher
         ch.basic_publish(exchange='',
-                        routing_key=props.reply_to,
-                        properties=BasicProperties(
-                            correlation_id = props.correlation_id,
-                            content_type="application/json"
-                            ),
-                        body=json.dumps({"status": response}))
+            routing_key=props.reply_to,
+            properties=BasicProperties(
+                correlation_id = props.correlation_id,
+                content_type="application/json"
+                ),
+            body=json.dumps({
+                "status": response, 
+                "account": request.title,
+                "timestamp": self.timer.get_time_str()
+            })
+        )
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
         print(" [F] Response sent")
@@ -125,28 +141,13 @@ class FundingAgency(object):
         
         self.connection.process_data_events(time_limit=None)
 
-        
-        # #Connect to RabbitMQ
-        # connection = BlockingConnection(ConnectionParameters(host='localhost'))
-        # channel = connection.channel()
-
-        # channel.queue_declare(queue='create_project_account', durable=True)
-
-        # channel.basic_publish(
-        #     exchange='',
-        #     routing_key='create_project_account',
-        #     body=json.dumps(message),
-        #     properties=BasicProperties(
-        #         delivery_mode=PERSISTENT_DELIVERY_MODE, #queue won't be lost even on restarts
-        #         content_type="application/json"
-        #     ))
-        # print(" [F] Sent %r" % message)
-        # connection.close()
-
     def on_response(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
         print(" [F] Received Create Account Response")
         if self.correlation_id == props.correlation_id:
             self.response = json.loads(body)
+
+            #adjust timer if needed
+            self.timer.adjust_timer(self.response["timestamp"])
 
 if __name__ == '__main__':
     funding_agency = FundingAgency()

@@ -24,6 +24,7 @@ def get_commands() -> list:
 
         'routing_key' defines the queue belonging to the target of the command (which is the id of the researcher)
         'command' is the name of the command can be:
+            - proposal
             - withdraw
             - add
             - remove
@@ -31,7 +32,7 @@ def get_commands() -> list:
             - details
             - time
 
-        the third parameter can be amount (only for withdraw) or researcher (only for add/remove) 
+        the third parameter can be amount (only for withdraw/proposal) or researcher (only for add/remove) 
     """
     
     input_line = input(" [Main] Type command:\n")
@@ -40,7 +41,10 @@ def get_commands() -> list:
     requests = input_line.split("|")
     for request in requests:
         command = request.split(":")[1].strip()
-        if command == "withdraw":
+        if command == "proposal":
+            routing_key, command, amount =  request.split(":")
+            list_commands.append({"routing_key": f"Researcher-{routing_key.strip()}", "command": Actions.RESEARCH_PROPOSAL.value, "amount": amount.strip()})
+        elif command == "withdraw":
             routing_key, command, amount =  request.split(":")
             list_commands.append({"routing_key": f"Researcher-{routing_key.strip()}", "command": Actions.WITHDRAW.value, "amount": amount.strip()})
         elif command == "add":

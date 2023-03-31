@@ -9,6 +9,7 @@ from university_request_handler import UniversityRequestHandler, CreateAccountHa
 from timer import Timer
 from request_status import RequestStatus
 from request_response import RequestResponse
+from concurrent.futures import ThreadPoolExecutor
 
 class University(object):
 
@@ -37,6 +38,12 @@ class University(object):
             .set_next_handler(ListTransactionsHandler())
         )
 
+        # two threads
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            executor.submit(self.start)
+            executor.submit(self.timer.start)
+
+    def start(self) -> None:        
         #Connect to RabbitMQ
         connection = BlockingConnection(ConnectionParameters(host='localhost'))
         channel = connection.channel()
@@ -64,7 +71,10 @@ class University(object):
         request = json.loads(body)
         print(f" [U] Received '{request['request_type']}' request")
 
-        result: RequestResponse = self.request_handler.execute_request(request, self.database)
+        #adjust timer if needed
+        self.timer.adjust_timer(request["timestamp"])
+
+        result: RequestResponse = self.request_handler.execute_request(request, self.database, self.timer)
 
         if result.status == RequestStatus.SUCCEEDED.value:
             # save database to file
