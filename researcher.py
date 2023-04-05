@@ -26,7 +26,6 @@ class Researcher(object):
     command_channel: BlockingChannel
     command_connection: BlockingConnection
     run: bool
-    research_account: str = None
 
     def __init__(self, id: int) -> None:
         self.current_date = date.today()
@@ -39,7 +38,6 @@ class Researcher(object):
     def start(self) -> None:
         # two threads
         with ThreadPoolExecutor(max_workers=3) as executor:
-            #initialization_future = executor.submit(self.perform_command, None)
             executor.submit(self.timer.start)
             executor.submit(self.command_listener)
 
@@ -95,26 +93,26 @@ class Researcher(object):
         try:
             if command["command"] == Actions.RESEARCH_PROPOSAL.value:
                 request_proposal = ResearchProposalRequest(
-                    self.id, "Distributed Systems", "This is assignment 2",  int(command['amount']), self.timer.get_time()
+                    command['project_id'], 
+                    command['title'], 
+                    command['description'],  
+                    int(command['amount']), 
+                    self.timer.get_time(), 
+                    self.id
                 )
 
                 print(f" [{self.id}] Submitting research proposal")
                 self.submit_research_proposal(request_proposal)
                 print(f" [{self.id}] Research proposal has been {self.funding_agency_response['status']}. Amount: {request_proposal.amount}")
-                if self.funding_agency_response['status'] == RequestStatus.APPROVED.value:
-                    self.research_account = self.funding_agency_response["account"]
             elif command["command"] == "time":
-                # primt time of researcher
+                # print time of researcher
                 print(f" [{self.id}] {self.timer.get_time_str()}")
             elif command["command"] == Actions.ADD_RESEARCH_ACCOUNT.value:
                 # notify researcher that has been added to the research account
-                self.research_account = command["account"]
                 print(f" [{self.id}] added to account '{command['account']}'")
             elif command["command"] == Actions.REMOVE_RESEARCH_ACCOUNT.value:
                 # notify researcher that has been removed from the research account
-                if self.research_account == command["account"]:
-                    self.research_account = None
-                    print(f" [{self.id}] removed from account '{command['account']}'")
+                print(f" [{self.id}] removed from account '{command['account']}'")
             elif command["command"] not in [comm.value for comm in Actions]:
                 print(f" [{self.id}] command {command['command']} does not exist")
             else:
@@ -135,7 +133,7 @@ class Researcher(object):
                 self.university_response = None
                 self.uni_correlation_id = str(uuid.uuid4())
 
-                # Execute University unicersity RPC
+                # Execute University RPC
                 execute_command_channel.basic_publish(
                     exchange='',
                     routing_key='university_requests_queue',
@@ -149,7 +147,6 @@ class Researcher(object):
                         "amount": command['amount'] if "amount" in command.keys() else None,
                         "researcher": self.id,
                         "target_researcher": command['researcher'] if "researcher" in command.keys() else None,
-                        "account": self.research_account,
                         "timestamp": self.timer.get_time_str()
                     })
                 )

@@ -20,7 +20,7 @@ def get_commands() -> list:
 
         Commands can be concatenated using th epipe character:
 
-            '1:add:3 | 2:details | 4:transactions' 
+            '1:proposal:DS:Distributed systems:CASE4 module:200000 | 1:add:3 | 2:details | 4:transactions' 
 
         'routing_key' defines the queue belonging to the target of the command (which is the id of the researcher)
         'command' is the name of the command can be:
@@ -42,8 +42,14 @@ def get_commands() -> list:
     for request in requests:
         command = request.split(":")[1].strip()
         if command == "proposal":
-            routing_key, command, amount =  request.split(":")
-            list_commands.append({"routing_key": f"Researcher-{routing_key.strip()}", "command": Actions.RESEARCH_PROPOSAL.value, "amount": amount.strip()})
+            routing_key, command, project_id, title, description, amount =  request.split(":")
+            list_commands.append({
+                "routing_key": f"Researcher-{routing_key.strip()}", 
+                "command": Actions.RESEARCH_PROPOSAL.value, 
+                "project_id": project_id.strip(),
+                "title": title.strip(),
+                "description": description.strip(),
+                "amount": amount.strip()})
         elif command == "withdraw":
             routing_key, command, amount =  request.split(":")
             list_commands.append({"routing_key": f"Researcher-{routing_key.strip()}", "command": Actions.WITHDRAW.value, "amount": amount.strip()})

@@ -5,7 +5,7 @@ from pika.adapters.blocking_connection import BlockingChannel
 import json
 import pickle
 from university_database import UniversityDatabase
-from university_request_handler import UniversityRequestHandler, CreateAccountHandler, WithdrawHandler, AddResearcherHandler, RemoveResearcherHandler, GetDetailsHandler, ListTransactionsHandler
+from university_request_handler import ResearcherProposalHandler, UniversityRequestHandler, CreateAccountHandler, WithdrawHandler, AddResearcherHandler, RemoveResearcherHandler, GetDetailsHandler, ListTransactionsHandler
 from timer import Timer
 from request_status import RequestStatus
 from request_response import RequestResponse
@@ -36,6 +36,7 @@ class University(object):
             .set_next_handler(RemoveResearcherHandler())
             .set_next_handler(GetDetailsHandler())
             .set_next_handler(ListTransactionsHandler())
+            .set_next_handler(ResearcherProposalHandler())
         )
 
         # two threads

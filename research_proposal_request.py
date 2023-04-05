@@ -8,13 +8,15 @@ class ResearchProposalRequest(object):
     description: str
     amount: int
     timestamp: date
+    researcher_id: str
 
-    def __init__(self, id: str, title: str, description: str, amount: int, timestamp: date) -> None:
+    def __init__(self, id: str, title: str, description: str, amount: int, timestamp: date, researcher_id: str) -> None:
         self.id = id
         self.title = title
         self.description = description
         self.amount = amount
         self.timestamp = timestamp
+        self.researcher_id = researcher_id
 
     @classmethod
     def from_json_data(self, json_data: str) -> None:
@@ -25,6 +27,7 @@ class ResearchProposalRequest(object):
         self.description = data["description"]
         self.amount = data["amount"]
         self.timestamp = datetime.strptime(data["timestamp"], '%d-%m-%Y').date()
+        self.researcher_id = data["researcher_id"]
 
         return self
 
@@ -34,7 +37,8 @@ class ResearchProposalRequest(object):
             "title": self.title,
             "description": self.description,
             "amount": self.amount,
-            "timestamp": self.timestamp.strftime("%d-%m-%Y")
+            "timestamp": self.timestamp.strftime("%d-%m-%Y"),
+            "researcher_id": self.researcher_id
         }
 
         return json.dumps(data)

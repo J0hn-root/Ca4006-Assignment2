@@ -61,25 +61,39 @@ class FundingAgency(object):
 
         #adjust timer if needed
         self.timer.adjust_timer(request.timestamp.strftime("%d-%m-%Y"))
+
+        # notify university that researcher applied for funding
+        # a reasearcher part of another project (lead or not lead) cannot be approved
+        # a researcher can be part of only one account at the time
+        proposal_request = {
+            'project_id': request.id,
+            'researcher': request.researcher_id,
+            'timestamp': self.timer.get_time_str()
+        }
+        self.notify_university(Actions.NOTIFY_RESEARCHER_PROPOSAL, proposal_request)
         
-        if request.amount > self.database.funds:
-            response = RequestStatus.REJECTED.value
+        if self.response['status'] == RequestStatus.REJECTED.value:
+            researcher_response = RequestStatus.REJECTED.value
+            print(f" [F] Research Proposals rejected: {self.response['message']}")
+        elif request.amount > self.database.funds:
+            researcher_response = RequestStatus.REJECTED.value
             print(f" [F] Research Proposals rejected: not enough funds (Request: {request.amount}, Funds: {self.database.funds})")
         elif request.amount >= 200000 and request.amount <= 500000:
-            response = RequestStatus.APPROVED.value
+            researcher_response = RequestStatus.APPROVED.value
             self.database.allocate_funds(request.amount)
             print(" [F] Research Proposals accepted")
         else:
-            response = RequestStatus.REJECTED.value
+            researcher_response = RequestStatus.REJECTED.value
             print(" [F] Research Proposals rejected")
 
         history_record = {
-            'request_type': Actions.CREATE_ACCOUNT.value,
-            'status': response, 
+            'status': researcher_response, 
             'budget': request.amount,
+            'project_id': request.id,
             'title': request.title,
-            'researcher': request.id,
-            'end_date': (date.today() + relativedelta(months=1)).strftime('%d-%m-%Y'), # end date 1 month after allocating budget
+            'description': request.description,
+            'researcher': request.researcher_id,
+            'end_date': (date.today() + relativedelta(months=6)).strftime('%d-%m-%Y'), # end date 6 month after allocating budget
             'timestamp': self.timer.get_time_str()
         }
 
@@ -97,7 +111,7 @@ class FundingAgency(object):
                 content_type="application/json"
                 ),
             body=json.dumps({
-                "status": response, 
+                "status": researcher_response, 
                 "account": request.title,
                 "timestamp": self.timer.get_time_str()
             })
@@ -105,10 +119,14 @@ class FundingAgency(object):
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
         print(" [F] Response sent")
-        if(response == RequestStatus.APPROVED.value):
-            self.notify_university(history_record)
+        if(researcher_response == RequestStatus.APPROVED.value):
+            # notify university to create an account
+            self.notify_university(Actions.CREATE_ACCOUNT, history_record)
 
-    def notify_university(self, message: dict):
+    def notify_university(self, action:  Actions, message: dict):
+        #add action type to the message
+        message['request_type'] = action.value
+
         #Connect to RabbitMQ
         self.connection = BlockingConnection(ConnectionParameters(host='localhost'))
         self.channel = self.connection.channel()
@@ -119,14 +137,14 @@ class FundingAgency(object):
 
         self.channel.basic_consume(
             queue=self.callback_queue,
-            on_message_callback=self.on_response,
+            on_message_callback=self.on_university_response,
             auto_ack=True)
         
         #Initialize the response to NULL and create a new request ID
         self.response = None
         self.correlation_id = str(uuid.uuid4())
 
-        print(" [F] Sending Create Account Request")
+        print(f" [F] Sending {action.value} Request")
         # Send Request To Funding Agency
         self.channel.basic_publish(
             exchange='',
@@ -141,13 +159,18 @@ class FundingAgency(object):
         
         self.connection.process_data_events(time_limit=None)
 
-    def on_response(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
-        print(" [F] Received Create Account Response")
+    def on_university_response(self, ch: BlockingChannel, method: Basic.Deliver, props: BasicProperties, body: bytes) -> None:
         if self.correlation_id == props.correlation_id:
             self.response = json.loads(body)
 
             #adjust timer if needed
             self.timer.adjust_timer(self.response["timestamp"])
+
+            if self.response['action'] == Actions.CREATE_ACCOUNT.value:
+                print(f" [F] Received {Actions.CREATE_ACCOUNT.value} Response")
+            elif self.response['action'] == Actions.NOTIFY_RESEARCHER_PROPOSAL.value:
+                print(f" [F] Received {Actions.NOTIFY_RESEARCHER_PROPOSAL.value} Response")
+            
 
 if __name__ == '__main__':
     funding_agency = FundingAgency()
