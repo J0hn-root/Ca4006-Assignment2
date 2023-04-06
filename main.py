@@ -93,6 +93,6 @@ if __name__ == '__main__':
     requests: list = get_commands()
     with ThreadPoolExecutor(max_workers=len(requests)) as executor:
         while True:
-            future_commands = {executor.submit(send_command, request['routing_key'], request): request for request in requests}
+            futures = executor.map(lambda request: send_command(request['routing_key'], request), requests)
             
             requests: list = get_commands()

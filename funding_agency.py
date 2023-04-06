@@ -103,6 +103,11 @@ class FundingAgency(object):
         with open(self.DATA_FILE, 'wb') as f:
             pickle.dump(self.database, f)
 
+        print(" [F] Response sent")
+        if(researcher_response == RequestStatus.APPROVED.value):
+            # notify university to create an account
+            self.notify_university(Actions.CREATE_ACCOUNT, history_record)
+
         # send response to researcher
         ch.basic_publish(exchange='',
             routing_key=props.reply_to,
@@ -117,11 +122,6 @@ class FundingAgency(object):
             })
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
-
-        print(" [F] Response sent")
-        if(researcher_response == RequestStatus.APPROVED.value):
-            # notify university to create an account
-            self.notify_university(Actions.CREATE_ACCOUNT, history_record)
 
     def notify_university(self, action:  Actions, message: dict):
         #add action type to the message
