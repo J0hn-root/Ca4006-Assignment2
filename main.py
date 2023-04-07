@@ -2,13 +2,7 @@
 from pika import BlockingConnection, ConnectionParameters
 from pika.spec import Basic, BasicProperties
 from pika.adapters.blocking_connection import BlockingChannel
-import sys
-from researcher import Researcher
-from funding_agency import FundingAgency
-from university import University
-from research_proposal_request import ResearchProposalRequest
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
+from concurrent.futures import ThreadPoolExecutor
 import json
 from actions import Actions
 

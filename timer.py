@@ -23,7 +23,7 @@ class Timer(object):
             #print(f" [T-{self.researcher_id}] Current date: {self.current_date.strftime('%d-%m-%Y')}")
             with self.lock:
                 self.current_date = self.current_date + relativedelta(days=1)
-            #increase date between 1 and 5 seconds
+            #increase date between 4 and 6 seconds
             time_to_sleep = random.randint(4, 6)
             time.sleep(time_to_sleep)
     
