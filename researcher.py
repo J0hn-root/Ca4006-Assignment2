@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from pika import BlockingConnection, ConnectionParameters
-from pika.spec import Basic, BasicProperties
+from pika.spec import Basic, BasicProperties, PERSISTENT_DELIVERY_MODE
 from pika.adapters.blocking_connection import BlockingChannel
 import uuid
 from research_proposal_request import ResearchProposalRequest
@@ -140,9 +140,11 @@ class Researcher(object):
                     properties=BasicProperties(
                         reply_to=self.uni_callback_queue,           # Anonymous exclusive researcher callback queue
                         correlation_id=self.uni_correlation_id,    # Request ID
-                        content_type="application/json"
+                        content_type="application/json",
+                        delivery_mode = PERSISTENT_DELIVERY_MODE
                     ),
                     body=json.dumps({
+                        "correlation_id": self.uni_correlation_id,
                         "request_type": command['command'],
                         "amount": command['amount'] if "amount" in command.keys() else None,
                         "researcher": self.id,
@@ -197,7 +199,8 @@ class Researcher(object):
                 properties=BasicProperties(
                     reply_to=callback_queue,   # Anonymous exclusive researcher callback queue
                     correlation_id=self.fa_correlation_id,    # Request ID
-                    content_type="application/json"
+                    content_type="application/json",
+                    delivery_mode = PERSISTENT_DELIVERY_MODE
                 ),
                 body=request.to_json()
             )

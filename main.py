@@ -20,7 +20,7 @@ def get_commands() -> list:
 
         Commands can be concatenated using th epipe character:
 
-            '1:proposal:DS:Distributed systems:CASE4 module:200000 | 1:add:3 | 2:details | 4:transactions' 
+            - 1:proposal:DS:Distributed systems:CASE4 module:200000 | 1:add:3 | 2:details | 4:transactions
 
         'routing_key' defines the queue belonging to the target of the command (which is the id of the researcher)
         'command' is the name of the command can be:
@@ -32,7 +32,12 @@ def get_commands() -> list:
             - details
             - time
 
-        the third parameter can be amount (only for withdraw/proposal) or researcher (only for add/remove) 
+        the third parameter can be amount (only for withdraw/proposal) or researcher (only for add/remove)
+
+        the proposal command has the following structure, all parameters are mandatory:
+
+            - routing_key:command:project_id:title:description:amount
+
     """
     
     input_line = input(" [Main] Type command:\n")

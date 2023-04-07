@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from pika import BlockingConnection, ConnectionParameters
-from pika.spec import Basic, BasicProperties
+from pika.spec import Basic, BasicProperties, PERSISTENT_DELIVERY_MODE
 from pika.adapters.blocking_connection import BlockingChannel
 import json
 import pickle
@@ -75,21 +75,26 @@ class University(object):
         #adjust timer if needed
         self.timer.adjust_timer(request["timestamp"])
 
-        result: RequestResponse = self.request_handler.execute_request(request, self.database, self.timer)
+        # check if request has been already processed
+        # correlation_id is the same as researcher->dunding_agency
+        if self.database.is_request_new(request["correlation_id"], request["request_type"]):
+            result: RequestResponse = self.request_handler.execute_request(request, self.database, self.timer)
 
-        if result.status == RequestStatus.SUCCEEDED.value:
             # save database to file
             with open(self.DATA_FILE, 'wb') as f:
                 pickle.dump(self.database, f)
 
             print(" [U] Changes Saved")
+        else:
+            result = self.database.get_request_metadata(request["correlation_id"], request["request_type"])
 
         # notify response
         ch.basic_publish(exchange='',
             routing_key=props.reply_to,
             properties=BasicProperties(
                 correlation_id = props.correlation_id,
-                content_type="application/json"
+                content_type="application/json",
+                delivery_mode = PERSISTENT_DELIVERY_MODE
                 ),
             body=result.to_json()
         )

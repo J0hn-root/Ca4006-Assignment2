@@ -7,7 +7,9 @@ class ResearchAccount(object):
     budget: int
     leading_researcher: str
     users: list
+    # withdraw transactions details
     transactions: dict
+    # number of withdraw transactions
     number_of_transactions: int
     title: str
     description: str
@@ -24,15 +26,22 @@ class ResearchAccount(object):
         self.title = title
         self.description = description
         self.project_id = project_id
-
+    
 class UniversityDatabase(object):
 
     accounts: dict              #account informations (key: research account name)
     researchers: dict           #mapping researcher-research_account (name)
 
+    # record last 10 requests made to the university
+    # k= int (1 to 10), v = touple (correlation_id, metadata)
+    request_history = dict
+    number_of_requests: int
+
     def __init__(self) -> None:
         self.accounts = {}
         self.researchers = {}
+        self.requests_history = {}
+        self.number_of_requests = 1
 
     def create_research_account(self, request: dict, end_date: date, timer: Timer) -> RequestResponse:
         # checking if researcher is member of another account or if another project with the same id exists is done in self.check_researcher_proposal()
@@ -48,10 +57,12 @@ class UniversityDatabase(object):
         self.accounts[request["project_id"]] = account
         self.researchers[request["researcher"]] = request["project_id"]
 
+        print(f" [U] Account '{request['project_id']}' created!")
         return RequestResponse(
             RequestStatus.SUCCEEDED.value, 
             f"Account '{request['project_id']}' has been created",
-            timer.get_time()
+            timer.get_time(),
+            action=request["request_type"]
         )
 
     def add_researcher(self, lead_researcher: str, researcher: str, timer: Timer) -> RequestResponse:
@@ -180,7 +191,7 @@ class UniversityDatabase(object):
         \t{'ID':4} | {'RESEARCHER':15} | {'AMOUNT':6} | {'DATE':15} | {'STATUS':10} | {'BUDGET':10}\n""")
 
         for id, transaction in account.transactions.items():
-            date_transaction = transaction['date'].strftime('%d-%m-%Y')
+            date_transaction = transaction['date']
             message_list.append(f"""\t\t{id: 4} | {transaction['researcher']:15} | {transaction['amount']:6} | {date_transaction:15} | {transaction['status']:10} | {transaction['budget']:10}\n""")
 
         message_list.append("\t\t------------------------------------------------------")
@@ -277,3 +288,26 @@ class UniversityDatabase(object):
                 timer.get_time(),
                 action=request["request_type"]
             )
+        
+    def record_request_result(self, correlation_id: str, result: dict, request_type: str) -> None:
+        #keep track of the last 10 requests
+        self.requests_history[self.number_of_requests % 10] = (correlation_id, result, request_type)
+        self.number_of_requests += 1
+
+    def is_request_new(self, correlation_id: str, request_type: str) -> bool:
+        """
+            Return false if the transaction has been already processed.
+            Return false if this is a new request.
+        """
+        for k, v in self.requests_history.items():
+            if v[0] == correlation_id and v[2] == request_type:
+                return False
+            
+        return True
+    
+    def get_request_metadata(self, correlation_id: str, request_type: str) -> dict:
+        for k, v in self.requests_history.items():
+            if v[0] == correlation_id and v[2] == request_type:
+                return v[1]
+            
+        return None
